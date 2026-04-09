@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Shield, Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import IvertoLogo from "../components/IvertoLogo";
 
 export default function LoginPage() {
   const { login, isAuthenticated } = useAuth();
@@ -20,10 +21,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    // Simulated delay for realism
-    await new Promise((r) => setTimeout(r, 600));
-
-    const result = login(email, password);
+    const result = await login(email, password);
     if (result.success) {
       navigate("/dashboard");
     } else {
@@ -35,11 +33,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left panel - branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-navy-900 via-navy-800 to-navy-700 relative overflow-hidden">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 relative overflow-hidden">
         <div className="absolute inset-0">
           {/* Decorative circles */}
-          <div className="absolute -top-20 -left-20 w-96 h-96 bg-navy-600/20 rounded-full blur-3xl" />
-          <div className="absolute bottom-10 right-10 w-72 h-72 bg-navy-500/15 rounded-full blur-3xl" />
+          <div className="absolute -top-20 -left-20 w-96 h-96 bg-[#E31B54]/10 rounded-full blur-3xl" />
+          <div className="absolute bottom-10 right-10 w-72 h-72 bg-[#E31B54]/8 rounded-full blur-3xl" />
           <div className="absolute top-1/2 left-1/3 w-48 h-48 bg-white/5 rounded-full blur-2xl" />
           {/* Grid pattern */}
           <div className="absolute inset-0 opacity-[0.03]" style={{
@@ -49,19 +47,21 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 flex flex-col justify-center px-16">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center border border-white/10">
-              <Shield className="w-8 h-8 text-white" />
+          <div className="flex items-center gap-4 mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center border border-white/10 p-2">
+              <IvertoLogo size={48} />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white tracking-tight">Iverto.ai</h1>
+              <h1 className="text-3xl font-bold text-white tracking-tight">
+                iverto<span className="text-[#E31B54]">.ai</span>
+              </h1>
               <p className="text-white/50 text-sm">Smart School Monitoring</p>
             </div>
           </div>
 
           <h2 className="text-4xl font-bold text-white leading-tight mb-4">
             Real-time Student<br />
-            <span className="text-navy-300">Recognition System</span>
+            <span className="text-[#E31B54]">Recognition System</span>
           </h2>
           <p className="text-white/60 text-lg leading-relaxed max-w-md">
             AI-powered CCTV monitoring with instant student identification, attendance tracking, and secure access control.
@@ -72,6 +72,11 @@ export default function LoginPage() {
             <StatItem value="24/7" label="Monitoring" />
             <StatItem value="99.2%" label="Accuracy" />
           </div>
+
+          {/* Floating logo watermark */}
+          <div className="absolute bottom-8 right-8 opacity-[0.04]">
+            <IvertoLogo size={200} />
+          </div>
         </div>
       </div>
 
@@ -80,10 +85,12 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2.5 mb-8">
-            <div className="w-10 h-10 rounded-xl bg-navy-800 flex items-center justify-center">
-              <Shield className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-gray-900 flex items-center justify-center p-1.5">
+              <IvertoLogo size={28} />
             </div>
-            <span className="text-xl font-bold text-navy-800">Iverto.ai</span>
+            <span className="text-xl font-bold text-gray-900">
+              iverto<span className="text-[#E31B54]">.ai</span>
+            </span>
           </div>
 
           <div className="mb-8">
@@ -112,7 +119,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@school.com"
                   required
-                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100 transition-all"
+                  className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-[#E31B54] focus:ring-2 focus:ring-[#E31B54]/10 transition-all"
                 />
               </div>
             </div>
@@ -130,7 +137,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-navy-500 focus:ring-2 focus:ring-navy-100 transition-all"
+                  className="w-full pl-11 pr-12 py-3 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-[#E31B54] focus:ring-2 focus:ring-[#E31B54]/10 transition-all"
                 />
                 <button
                   type="button"
@@ -146,7 +153,7 @@ export default function LoginPage() {
               id="login-submit"
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-navy-800 text-white text-sm font-semibold hover:bg-navy-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-navy-800/25"
+              className="w-full py-3 rounded-xl bg-[#E31B54] text-white text-sm font-semibold hover:bg-[#c7174a] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#E31B54]/25"
             >
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -190,10 +197,10 @@ function CredRow({ role, email, pass, onFill }: { role: string; email: string; p
   return (
     <button onClick={onFill} className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors text-left group">
       <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold text-navy-800 bg-navy-100 px-2 py-0.5 rounded-md">{role}</span>
+        <span className="text-xs font-semibold text-[#E31B54] bg-[#E31B54]/10 px-2 py-0.5 rounded-md">{role}</span>
         <span className="text-xs text-gray-500">{email}</span>
       </div>
-      <span className="text-[10px] text-gray-400 group-hover:text-navy-600 transition-colors">Click to fill</span>
+      <span className="text-[10px] text-gray-400 group-hover:text-[#E31B54] transition-colors">Click to fill</span>
     </button>
   );
 }

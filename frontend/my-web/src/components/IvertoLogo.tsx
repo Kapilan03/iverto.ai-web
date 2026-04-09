@@ -1,0 +1,37 @@
+interface IvertoLogoProps {
+  size?: number;
+  className?: string;
+}
+
+/**
+ * Inline SVG recreation of the Iverto.ai crimson crescent logo.
+ * Three nested crescents in the brand crimson color (#E31B54).
+ */
+export default function IvertoLogo({ size = 32, className = "" }: IvertoLogoProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 200 200"
+      width={size}
+      height={size}
+      className={className}
+      aria-label="Iverto.ai logo"
+    >
+      {/* Outer crescent */}
+      <path
+        d="M100 10 C45 10, 5 55, 5 110 C5 165, 45 195, 90 195 C50 180, 30 150, 30 110 C30 65, 60 30, 100 10Z"
+        fill="#E31B54"
+      />
+      {/* Middle crescent */}
+      <path
+        d="M110 45 C70 45, 40 75, 40 115 C40 155, 65 180, 100 185 C70 175, 55 150, 55 115 C55 80, 75 55, 110 45Z"
+        fill="#E31B54"
+      />
+      {/* Inner crescent */}
+      <path
+        d="M120 80 C90 80, 70 100, 70 125 C70 155, 85 170, 110 175 C90 168, 82 150, 82 125 C82 105, 95 88, 120 80Z"
+        fill="#E31B54"
+      />
+    </svg>
+  );
+}

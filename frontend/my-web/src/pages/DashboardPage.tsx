@@ -1,55 +1,138 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useStudents } from "../context/StudentContext";
+import CameraFeed from "../components/CameraFeed";
 import StudentDetailModal from "../components/StudentDetailModal";
 import AccessDeniedModal from "../components/AccessDeniedModal";
 import RegisterStudentModal from "../components/RegisterStudentModal";
 import type { Student } from "../data/mockData";
-import { Camera, Circle, UserPlus, AlertTriangle, Users } from "lucide-react";
-
-// Predefined clickable zones on the CCTV feed
-const CCTV_ZONES = [
-  { id: "STU001", x: "12%", y: "35%", w: "18%", h: "50%", label: "Zone A" },
-  { id: "STU002", x: "35%", y: "30%", w: "16%", h: "55%", label: "Zone B" },
-  { id: "STU003", x: "58%", y: "38%", w: "17%", h: "48%", label: "Zone C" },
-  { id: "unknown", x: "78%", y: "40%", w: "15%", h: "45%", label: "Unknown" },
-];
+import { ROLE_PERMISSIONS, type Camera as CameraType } from "../data/mockData";
+import { supabase } from "../lib/supabase";
+import {
+  Camera,
+  Circle,
+  UserPlus,
+  AlertTriangle,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  Shield,
+  Monitor,
+  Lock,
+} from "lucide-react";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { students, getStudentById } = useStudents();
+  const { students } = useStudents();
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showAccessDenied, setShowAccessDenied] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [activeCameraIndex, setActiveCameraIndex] = useState(0);
+  const [dbCameras, setDbCameras] = useState<CameraType[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleZoneClick = (zoneId: string) => {
-    if (zoneId === "unknown") {
-      if (user?.role === "parent") {
-        setShowAccessDenied(true);
-      } else {
-        setShowRegister(true);
+  const role = user?.role || "parent";
+  const permissions = ROLE_PERMISSIONS[role];
+
+  useEffect(() => {
+    async function fetchCameras() {
+      const { data, error } = await supabase.from('cameras').select('*, zones:camera_zones(*)');
+      if (!error && data) {
+        const mapped = data.map((d: any) => ({
+          ...d,
+          allowedRoles: d.allowed_roles,
+          linkedStudentId: d.linked_student_id,
+        }));
+        setDbCameras(mapped);
       }
-      return;
     }
+    fetchCameras();
+  }, []);
 
-    const student = getStudentById(zoneId);
-    if (!student) return;
+  // Filter cameras by role
+  const visibleCameras = dbCameras.filter((cam) => {
+    if (permissions.canViewAllCameras) return true;
+    return cam.allowedRoles.includes(role);
+  });
 
-    // Parent can only see their own child
-    if (user?.role === "parent") {
-      if (user.studentId === zoneId) {
-        setSelectedStudent(student);
-      } else {
-        setShowAccessDenied(true);
+  const lockedCameras = dbCameras.filter((cam) => {
+    if (permissions.canViewAllCameras) return false;
+    return !cam.allowedRoles.includes(role);
+  });
+
+  // Scroll to active camera
+  const scrollToCamera = useCallback(
+    (index: number) => {
+      if (!scrollRef.current) return;
+      const container = scrollRef.current;
+      const children = container.children;
+      if (children[index]) {
+        const child = children[index] as HTMLElement;
+        container.scrollTo({
+          left: child.offsetLeft - container.offsetLeft,
+          behavior: "smooth",
+        });
       }
-    } else {
-      setSelectedStudent(student);
+      setActiveCameraIndex(index);
+    },
+    []
+  );
+
+  // Handle scroll snap detection
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    let timeout: ReturnType<typeof setTimeout>;
+    const handleScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        const scrollLeft = container.scrollLeft;
+        const width = container.clientWidth;
+        const index = Math.round(scrollLeft / width);
+        setActiveCameraIndex(Math.min(index, visibleCameras.length - 1));
+      }, 80);
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      clearTimeout(timeout);
+    };
+  }, [visibleCameras.length]);
+
+  const goNext = () => {
+    if (activeCameraIndex < visibleCameras.length - 1) {
+      scrollToCamera(activeCameraIndex + 1);
     }
   };
 
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString("en-US", { hour12: false });
-  const dateStr = now.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  const goPrev = () => {
+    if (activeCameraIndex > 0) {
+      scrollToCamera(activeCameraIndex - 1);
+    }
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") goNext();
+      if (e.key === "ArrowLeft") goPrev();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  });
+
+  // Stats
+  const totalIdentified = visibleCameras.reduce(
+    (sum, c) => sum + c.zones.filter((z) => z.id !== "unknown").length,
+    0
+  );
+  const totalUnknown = visibleCameras.reduce(
+    (sum, c) => sum + c.zones.filter((z) => z.id === "unknown").length,
+    0
+  );
+  const onlineCameras = visibleCameras.filter((c) => c.status === "online").length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -57,7 +140,20 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Live Monitoring</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Real-time CCTV feed with AI recognition</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Real-time CCTV feed with AI recognition
+            <span className="mx-2 text-gray-300">·</span>
+            <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full border ${
+              role === "admin"
+                ? "bg-amber-500/10 text-amber-700 border-amber-500/30"
+                : role === "staff"
+                  ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/30"
+                  : "bg-blue-500/10 text-blue-700 border-blue-500/30"
+            }`}>
+              <Shield className="w-3 h-3" />
+              {permissions.label}
+            </span>
+          </p>
         </div>
         <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
           <div className="flex items-center gap-1.5">
@@ -69,125 +165,177 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* CCTV Feed */}
-      <div className="bg-gray-900 rounded-2xl overflow-hidden shadow-2xl border-2 border-gray-800 relative">
-        {/* Top bar overlay */}
-        <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2.5 bg-gradient-to-b from-black/70 to-transparent">
-          <div className="flex items-center gap-2">
-            <Camera className="w-4 h-4 text-white/60" />
-            <span className="text-xs font-medium text-white/80 tracking-wide">CAM-01 — Main Corridor</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-white/50 font-mono">{dateStr}</span>
-            <span className="text-xs text-white/70 font-mono font-bold">{timeStr}</span>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-red-500 rec-blink" />
-              <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">REC</span>
+      {/* Camera Carousel */}
+      <div className="relative group/carousel">
+        {/* Left Arrow */}
+        {activeCameraIndex > 0 && (
+          <button
+            id="camera-prev-btn"
+            onClick={goPrev}
+            className="camera-nav-btn left-3"
+            aria-label="Previous camera"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Right Arrow */}
+        {activeCameraIndex < visibleCameras.length - 1 && (
+          <button
+            id="camera-next-btn"
+            onClick={goNext}
+            className="camera-nav-btn right-3"
+            aria-label="Next camera"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        )}
+
+        {/* Scrollable camera feeds */}
+        <div
+          ref={scrollRef}
+          className="camera-carousel"
+          id="camera-carousel"
+        >
+          {visibleCameras.map((camera) => (
+            <div key={camera.id} className="camera-slide">
+              <CameraFeed
+                camera={camera}
+                onStudentClick={setSelectedStudent}
+                onUnknownClick={() => setShowRegister(true)}
+                onAccessDenied={() => setShowAccessDenied(true)}
+              />
             </div>
-          </div>
+          ))}
         </div>
 
-        {/* The "feed" area */}
-        <div className="cctv-scanline relative aspect-video bg-gradient-to-br from-gray-800 via-gray-900 to-gray-800">
-          <div className="cctv-noise" />
-
-          {/* Simulated classroom scene */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative w-full h-full">
-              {/* Background elements for visual depth */}
-              <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-gray-700/30 to-transparent" />
-              <div className="absolute top-8 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gray-600/30" />
-
-              {/* Person silhouettes */}
-              {CCTV_ZONES.map((zone) => {
-                const isUnknown = zone.id === "unknown";
-                const student = !isUnknown ? getStudentById(zone.id) : null;
-                return (
-                  <button
-                    key={zone.id}
-                    id={`zone-${zone.id}`}
-                    onClick={() => handleZoneClick(zone.id)}
-                    className="absolute group focus:outline-none"
-                    style={{ left: zone.x, top: zone.y, width: zone.w, height: zone.h }}
-                  >
-                    {/* Silhouette */}
-                    <div className="w-full h-full flex flex-col items-center justify-end">
-                      <div className={`relative w-3/4 h-full rounded-t-full ${
-                        isUnknown ? "bg-red-900/20" : "bg-navy-800/20"
-                      }`}>
-                        {/* Head */}
-                        <div className={`absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2 ${
-                          isUnknown
-                            ? "border-red-500/60 bg-red-900/30"
-                            : "border-emerald-500/60 bg-navy-800/30"
-                        }`} />
-                      </div>
-                    </div>
-
-                    {/* Bounding box & label */}
-                    <div className={`absolute inset-0 border-2 rounded-lg transition-all ${
-                      isUnknown
-                        ? "border-red-500/50 group-hover:border-red-400 group-hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
-                        : "border-emerald-500/50 group-hover:border-emerald-400 group-hover:shadow-[0_0_20px_rgba(16,185,129,0.2)]"
-                    } zone-pulse`}>
-                      <div className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
-                        isUnknown
-                          ? "bg-red-500/90 text-white"
-                          : "bg-emerald-500/90 text-white"
-                      }`}>
-                        {isUnknown ? "UNKNOWN" : student?.name?.split(" ")[0]?.toUpperCase() || zone.label}
-                      </div>
-                      {/* Corner markers */}
-                      <div className={`absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 rounded-tl ${isUnknown ? "border-red-400" : "border-emerald-400"}`} />
-                      <div className={`absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 rounded-tr ${isUnknown ? "border-red-400" : "border-emerald-400"}`} />
-                      <div className={`absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 rounded-bl ${isUnknown ? "border-red-400" : "border-emerald-400"}`} />
-                      <div className={`absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 rounded-br ${isUnknown ? "border-red-400" : "border-emerald-400"}`} />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Dot indicators */}
+        {visibleCameras.length > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-4">
+            {visibleCameras.map((cam, i) => (
+              <button
+                key={cam.id}
+                onClick={() => scrollToCamera(i)}
+                className={`transition-all duration-300 rounded-full ${
+                  i === activeCameraIndex
+                    ? "w-8 h-2.5 bg-navy-700"
+                    : "w-2.5 h-2.5 bg-gray-300 hover:bg-gray-400"
+                }`}
+                aria-label={`Go to ${cam.name}`}
+              />
+            ))}
           </div>
-        </div>
-
-        {/* Bottom bar overlay */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2.5 bg-gradient-to-t from-black/70 to-transparent">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-xs text-white/70">
-                <span className="font-bold text-emerald-400">{CCTV_ZONES.length - 1}</span> identified
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-              <span className="text-xs text-white/70">
-                <span className="font-bold text-red-400">1</span> unknown
-              </span>
-            </div>
-          </div>
-          <span className="text-[10px] text-white/40 font-mono">Iverto.ai v2.4 — FPS: 30</span>
-        </div>
+        )}
       </div>
+
+      {/* Camera Thumbnail Strip */}
+      {visibleCameras.length > 1 && (
+        <div className="mt-5 overflow-x-auto pb-2 -mx-1">
+          <div className="flex gap-3 px-1 min-w-max">
+            {visibleCameras.map((cam, i) => (
+              <button
+                key={cam.id}
+                id={`camera-thumb-${cam.id}`}
+                onClick={() => scrollToCamera(i)}
+                className={`camera-thumb ${i === activeCameraIndex ? "camera-thumb-active" : ""}`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  cam.status === "online"
+                    ? i === activeCameraIndex
+                      ? "bg-navy-700 text-white"
+                      : "bg-gray-100 text-gray-500"
+                    : "bg-amber-100 text-amber-600"
+                }`}>
+                  <Monitor className="w-4 h-4" />
+                </div>
+                <div className="text-left min-w-0">
+                  <p className={`text-xs font-semibold truncate ${
+                    i === activeCameraIndex ? "text-navy-800" : "text-gray-700"
+                  }`}>
+                    {cam.name}
+                  </p>
+                  <p className="text-[10px] text-gray-400 truncate">{cam.id}</p>
+                </div>
+                <div className="ml-auto flex-shrink-0">
+                  <Circle className={`w-2 h-2 ${
+                    cam.status === "online"
+                      ? "fill-emerald-500 text-emerald-500"
+                      : cam.status === "maintenance"
+                        ? "fill-amber-500 text-amber-500"
+                        : "fill-red-500 text-red-500"
+                  }`} />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Locked Cameras (for non-admin roles) */}
+      {lockedCameras.length > 0 && (
+        <div className="mt-4 p-4 rounded-xl bg-gray-100/80 border border-gray-200/80">
+          <div className="flex items-center gap-2 mb-3">
+            <Lock className="w-4 h-4 text-gray-400" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Restricted Cameras ({lockedCameras.length})
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {lockedCameras.map((cam) => (
+              <div
+                key={cam.id}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-200/60 text-gray-400 text-xs font-medium"
+              >
+                <Lock className="w-3 h-3" />
+                {cam.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick info cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <QuickCard label="Total Students" value={String(students.length)} icon={Users} color="navy" />
-        <QuickCard label="Identified" value={String(CCTV_ZONES.length - 1)} icon={Camera} color="emerald" />
-        <QuickCard label="Unrecognized" value="1" icon={AlertTriangle} color="red" />
-        <QuickCard label="Cameras Active" value="4" icon={Camera} color="blue" />
+        <QuickCard
+          label="Total Students"
+          value={String(students.length)}
+          icon={Users}
+          color="navy"
+        />
+        <QuickCard
+          label="Identified"
+          value={String(totalIdentified)}
+          icon={Camera}
+          color="emerald"
+        />
+        <QuickCard
+          label="Unrecognized"
+          value={String(totalUnknown)}
+          icon={AlertTriangle}
+          color="red"
+        />
+        <QuickCard
+          label="Cameras Online"
+          value={`${onlineCameras}/${visibleCameras.length}`}
+          icon={Camera}
+          color="blue"
+        />
       </div>
 
-      {/* Register prompt for admin/staff if they want */}
-      {(user?.role === "admin" || user?.role === "staff") && (
+      {/* Register prompt for admin/staff */}
+      {(permissions.canRegisterStudents && totalUnknown > 0) && (
         <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-amber-200/50 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-amber-800">Unrecognized Person Detected</p>
-              <p className="text-xs text-amber-600 mt-0.5">Click the red zone or this button to register</p>
+              <p className="text-sm font-semibold text-amber-800">
+                {totalUnknown} Unrecognized {totalUnknown === 1 ? "Person" : "People"} Detected
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Click the red zone on any camera or this button to register
+              </p>
             </div>
           </div>
           <button
@@ -201,9 +349,29 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Parent info banner */}
+      {role === "parent" && (
+        <div className="mt-6 p-4 rounded-xl bg-blue-50 border border-blue-200 flex items-start gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-200/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Shield className="w-5 h-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-blue-800">Parent Access Mode</p>
+            <p className="text-xs text-blue-600 mt-0.5 leading-relaxed">
+              You are viewing cameras where your child may appear. Your child is highlighted with a
+              <span className="inline-block mx-1 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-700 font-bold text-[10px]">★ CYAN</span>
+              border. Other students' details are restricted for privacy.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Modals */}
       {selectedStudent && (
-        <StudentDetailModal student={selectedStudent} onClose={() => setSelectedStudent(null)} />
+        <StudentDetailModal
+          student={selectedStudent}
+          onClose={() => setSelectedStudent(null)}
+        />
       )}
       {showAccessDenied && (
         <AccessDeniedModal onClose={() => setShowAccessDenied(false)} />
@@ -216,9 +384,15 @@ export default function DashboardPage() {
 }
 
 function QuickCard({
-  label, value, icon: Icon, color,
+  label,
+  value,
+  icon: Icon,
+  color,
 }: {
-  label: string; value: string; icon: typeof Camera; color: string;
+  label: string;
+  value: string;
+  icon: typeof Camera;
+  color: string;
 }) {
   const colors: Record<string, string> = {
     navy: "bg-navy-50 border-navy-200 text-navy-700",
