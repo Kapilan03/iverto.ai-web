@@ -15,14 +15,35 @@ RTSP_URL = "rtsp://admin:pass@192.168.1.100"
 # ================== MODEL PATH ==================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-PROTOTXT = os.path.join(BASE_DIR, "deploy.prototxt")
-MODEL = os.path.join(BASE_DIR, "res10_300x300_ssd_iter_140000.caffemodel")
+# 🔴 If your model files are in a different folder, set the full path here:
+# Model files are in the parent folder (CameraDemo)
+MODEL_DIR = os.path.dirname(BASE_DIR)
 
-if not os.path.exists(PROTOTXT):
-    raise FileNotFoundError(f"Missing file: {PROTOTXT}")
+# Search order: MODEL_DIR → parent folder → script folder
+PROTOTXT_NAME = "deploy.prototxt"
+MODEL_NAME = "res10_300x300_ssd_iter_140000.caffemodel"
 
-if not os.path.exists(MODEL):
-    raise FileNotFoundError(f"Missing file: {MODEL}")
+PROTOTXT = None
+MODEL = None
+
+for search_dir in [MODEL_DIR, os.path.dirname(BASE_DIR), BASE_DIR]:
+    p = os.path.join(search_dir, PROTOTXT_NAME)
+    m = os.path.join(search_dir, MODEL_NAME)
+    if os.path.exists(p) and os.path.exists(m):
+        PROTOTXT = p
+        MODEL = m
+        print(f"Found model files in: {search_dir}")
+        break
+
+if PROTOTXT is None or MODEL is None:
+    raise FileNotFoundError(
+        f"Cannot find '{PROTOTXT_NAME}' and '{MODEL_NAME}'.\n"
+        f"Searched in:\n"
+        f"  1. {MODEL_DIR}\n"
+        f"  2. {os.path.dirname(BASE_DIR)}\n"
+        f"  3. {BASE_DIR}\n"
+        f"Please set MODEL_DIR at line 23 to the folder containing your model files."
+    )
 
 net = cv2.dnn.readNetFromCaffe(PROTOTXT, MODEL)
 
