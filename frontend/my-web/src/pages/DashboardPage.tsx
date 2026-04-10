@@ -38,10 +38,18 @@ export default function DashboardPage() {
     async function fetchCameras() {
       const { data, error } = await supabase.from('cameras').select('*, zones:camera_zones(*)');
       if (!error && data) {
+        // Map of camera IDs to local stream URLs (proxied via Vite to Flask on port 5000)
+        const LOCAL_STREAMS: Record<string, string> = {
+          "CAM-01": "/cam1",
+          // Add more cameras here:
+          // "CAM-02": "/cam2",
+        };
+
         const mapped = data.map((d: any) => ({
           ...d,
           allowedRoles: d.allowed_roles,
           linkedStudentId: d.linked_student_id,
+          streamUrl: d.stream_url || LOCAL_STREAMS[d.id] || undefined,
         }));
         setDbCameras(mapped);
       }
@@ -49,11 +57,8 @@ export default function DashboardPage() {
     fetchCameras();
   }, []);
 
-  // Filter cameras by role
-  const visibleCameras = dbCameras.filter((cam) => {
-    if (permissions.canViewAllCameras) return true;
-    return cam.allowedRoles.includes(role);
-  });
+  // Only show CAM-01 (live CCTV feed)
+  const visibleCameras = dbCameras.filter((cam) => cam.id === "CAM-01");
 
   const lockedCameras = dbCameras.filter((cam) => {
     if (permissions.canViewAllCameras) return false;

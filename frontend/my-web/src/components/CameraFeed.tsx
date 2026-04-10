@@ -136,7 +136,8 @@ export default function CameraFeed({ camera, onStudentClick, onUnknownClick, onA
           </>
         )}
 
-        {/* AI Overlay Container */}
+        {/* AI Overlay Container — only show for simulated cameras (no live stream) */}
+        {!camera.streamUrl && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="relative w-full h-full pointer-events-auto">
             
@@ -216,6 +217,7 @@ export default function CameraFeed({ camera, onStudentClick, onUnknownClick, onA
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* Bottom bar overlay */}
