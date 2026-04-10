@@ -1,165 +1,197 @@
 import cv2
 import threading
 import time
-import subprocess
+import os
+from flask import Flask, Response
+from flask_cors import CORS
 
 # ================== SETTINGS ==================
-SMALL_WIDTH = 640
-SMALL_HEIGHT = 480
-
-# WebRTC Stream Constant Resolution (Must stay constant for ffmpeg)
-STREAM_WIDTH = 1280 
+STREAM_WIDTH = 1280
 STREAM_HEIGHT = 720
-STREAM_FPS = 15 # Adjust based on your target broadcast framerate
 
-# ================== LOAD FACE MODEL ==================
-net = cv2.dnn.readNetFromCaffe(
-    "deploy.prototxt",
-    "res10_300x300_ssd_iter_140000.caffemodel"
-)
+# 🔴 Replace with your CCTV RTSP URL
+RTSP_URL = "rtsp://admin:pass@192.168.1.100"
 
+# ================== MODEL PATH ==================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+PROTOTXT = os.path.join(BASE_DIR, "deploy.prototxt")
+MODEL = os.path.join(BASE_DIR, "res10_300x300_ssd_iter_140000.caffemodel")
+
+if not os.path.exists(PROTOTXT):
+    raise FileNotFoundError(f"Missing file: {PROTOTXT}")
+
+if not os.path.exists(MODEL):
+    raise FileNotFoundError(f"Missing file: {MODEL}")
+
+net = cv2.dnn.readNetFromCaffe(PROTOTXT, MODEL)
+
+# ================== FACE DETECTION ==================
 def detect_faces(frame):
     h, w = frame.shape[:2]
 
-    blob = cv2.dnn.blobFromImage(frame, 1.0, (300, 300),
-                                 (104.0, 177.0, 123.0))
+    blob = cv2.dnn.blobFromImage(
+        frame, 1.0, (300, 300),
+        (104.0, 177.0, 123.0)
+    )
+
     net.setInput(blob)
     detections = net.forward()
 
     faces = []
     for i in range(detections.shape[2]):
         confidence = detections[0, 0, i, 2]
-
         if confidence > 0.75:
             box = detections[0, 0, i, 3:7] * [w, h, w, h]
-            (x1, y1, x2, y2) = box.astype("int")
-            faces.append((x1, y1, x2-x1, y2-y1))
+            x1, y1, x2, y2 = box.astype("int")
+            faces.append((x1, y1, x2 - x1, y2 - y1))
 
     return faces
 
 
-# ================== RTSP STREAM ==================
-# Update this with your real CCTV RTSP URL
-cap = cv2.VideoCapture("rtsp://url")
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+# ================== CAMERA CONNECTION ==================
+def create_camera():
+    cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return cap
+
+
+cap = create_camera()
 
 latest_frame = None
+latest_processed = None
 lock = threading.Lock()
+running = True
 
-def capture():
-    global latest_frame
-    while True:
+
+# ================== BACKGROUND CAPTURE ==================
+def capture_frames():
+    global latest_frame, cap
+
+    while running:
+        if not cap.isOpened():
+            print("Reconnecting CCTV...")
+            cap.release()
+            time.sleep(2)
+            cap = create_camera()
+            continue
+
         ret, frame = cap.read()
-        if ret:
+
+        if not ret:
+            print("Camera read failed. Retrying...")
+            time.sleep(1)
+            continue
+
+        with lock:
+            latest_frame = frame
+
+
+threading.Thread(target=capture_frames, daemon=True).start()
+
+
+# ================== AI PROCESSING LOOP ==================
+def process_frames():
+    global latest_processed
+    face_detected = False
+    reset_timer = 0
+
+    NORMAL_INTERVAL = 0.04  # ~25 FPS
+    LOW_INTERVAL = 0.5      # ~2 FPS
+    last_time = 0
+
+    while running:
+        if latest_frame is None:
+            time.sleep(0.01)
+            continue
+
+        with lock:
+            frame = latest_frame.copy()
+
+        now = time.time()
+        interval = LOW_INTERVAL if face_detected else NORMAL_INTERVAL
+
+        if (now - last_time) >= interval:
+            last_time = now
+
+            faces = detect_faces(frame)
+
+            if faces:
+                face_detected = True
+                reset_timer = time.time()
+            else:
+                if time.time() - reset_timer > 3:
+                    face_detected = False
+
+            # Draw rectangles on faces
+            for (x, y, w, h) in faces:
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(frame, "FACE", (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+            # Add status text
+            status = f"Faces: {len(faces)} | Mode: {'ALERT' if face_detected else 'NORMAL'}"
+            cv2.putText(frame, status, (20, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+            # Resize for consistent streaming
+            output = cv2.resize(frame, (STREAM_WIDTH, STREAM_HEIGHT))
+
             with lock:
-                latest_frame = frame
+                latest_processed = output
 
-threading.Thread(target=capture, daemon=True).start()
-
-# ================== SETUP MEDIAMTX CONNECTION ==================
-print("Starting connection to MediaMTX...")
-ffmpeg_cmd = [
-    'ffmpeg',
-    '-y',
-    '-f', 'rawvideo',
-    '-vcodec', 'rawvideo',
-    '-pix_fmt', 'bgr24',
-    '-s', f"{STREAM_WIDTH}x{STREAM_HEIGHT}",
-    '-r', str(STREAM_FPS),
-    '-i', '-', 
-    '-c:v', 'libx264',
-    '-preset', 'ultrafast',
-    '-tune', 'zerolatency',
-    '-f', 'rtsp',
-    'rtsp://localhost:8554/cam1'
-]
-ffmpeg_process = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
+        time.sleep(0.01)
 
 
-# ================== FPS CONTROL ==================
-NORMAL_INTERVAL = 0.04   # ~25 FPS
-LOW_INTERVAL = 0.5       # ~2 FPS
+threading.Thread(target=process_frames, daemon=True).start()
 
-last_time = 0
-face_detected = False
-reset_timer = 0
 
-# ================== MAIN LOOP ==================
-while True:
-    if latest_frame is None:
-        continue
+# ================== FLASK MJPEG SERVER ==================
+app = Flask(__name__)
+CORS(app)  # Allow React to connect from localhost:5173
 
-    with lock:
-        frame = latest_frame.copy()
 
-    now = time.time()
-    interval = LOW_INTERVAL if face_detected else NORMAL_INTERVAL
+def generate_mjpeg():
+    """Yields JPEG frames as a multipart HTTP response (MJPEG)."""
+    while True:
+        with lock:
+            frame = latest_processed
 
-    if (now - last_time) >= interval:
-        last_time = now
+        if frame is None:
+            time.sleep(0.05)
+            continue
 
-        # 🔥 FULL RESOLUTION PROCESSING
-        faces = detect_faces(frame)
+        # Encode frame as JPEG
+        ret, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ret:
+            continue
 
-        if len(faces) > 0:
-            face_detected = True
-            reset_timer = time.time()
-        else:
-            if time.time() - reset_timer > 3:
-                face_detected = False
+        yield (
+            b'--frame\r\n'
+            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n'
+        )
 
-        # Draw faces
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x+w, y+h), (0,255,0), 2)
+        time.sleep(0.03)  # ~30 FPS cap
 
-        # ================== DISPLAY LOGIC ==================
-        if face_detected:
-            # 🔴 Reduced display (high-quality resize)
-            display = cv2.resize(frame, (SMALL_WIDTH, SMALL_HEIGHT),
-                                 interpolation=cv2.INTER_LANCZOS4)
-        else:
-            # 🟢 Normal → SAME AS ORIGINAL (NO RESIZE)
-            display = frame.copy()
 
-        # ================== TEXT ==================
-        mode = "LOW FPS + SMALL DISPLAY" if face_detected else "NORMAL (FULL DISPLAY)"
-        cv2.putText(display, mode, (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+@app.route('/cam1')
+def camera_feed():
+    """Serves the live MJPEG stream at http://localhost:5000/cam1"""
+    return Response(
+        generate_mjpeg(),
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
 
-        cv2.putText(display,
-                    f"Processing: {frame.shape[1]}x{frame.shape[0]}",
-                    (20, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (255,0,0),
-                    2)
 
-        cv2.putText(display,
-                    f"Display: {display.shape[1]}x{display.shape[0]}",
-                    (20, 120),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    (0,255,255),
-                    2)
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    return {"status": "ok", "camera_connected": cap.isOpened()}
 
-        # ================== SHOW ==================
-        cv2.imshow("Face Detection System", display)
-        
-        # ================== STREAM TO DASHBOARD ==================
-        stream_frame = cv2.resize(display, (STREAM_WIDTH, STREAM_HEIGHT))
-        
-        try:
-             ffmpeg_process.stdin.write(stream_frame.tobytes())
-        except Exception as e:
-             # Prevent crash if MediaMTX is not running
-             print(f"Warning: Couldn't stream to MediaMTX. Is it running? ({e})")
 
-    if cv2.waitKey(1) & 0xFF == 27:
-        break
-
-# Cleanup
-cap.release()
-cv2.destroyAllWindows()
-if ffmpeg_process:
-    ffmpeg_process.stdin.close()
-    ffmpeg_process.wait()
+if __name__ == '__main__':
+    print("=" * 50)
+    print("  IVERTO AI Camera Stream Server")
+    print("  Stream URL: http://localhost:5000/cam1")
+    print("=" * 50)
+    app.run(host='0.0.0.0', port=5000, threaded=True)

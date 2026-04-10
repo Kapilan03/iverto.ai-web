@@ -64,7 +64,7 @@ export const MOCK_CAMERAS: Camera[] = [
     location: "Building A — Ground Floor",
     status: "online",
     fps: 30,
-    streamUrl: "http://localhost:8889/cam1",
+    streamUrl: "http://localhost:5000/cam1",
     allowedRoles: ["admin", "staff", "parent"],
     zones: [
       { id: "STU001", x: "12%", y: "35%", w: "18%", h: "50%", label: "Zone A" },
