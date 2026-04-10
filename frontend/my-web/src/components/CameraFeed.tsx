@@ -4,6 +4,7 @@ import { ROLE_PERMISSIONS, type Camera, type Student } from "../data/mockData";
 import { Camera as CameraIcon, Circle, Users, AlertTriangle, Wrench } from "lucide-react";
 import { useState, useEffect } from "react";
 import IvertoLogo from "./IvertoLogo";
+import WebRTCPlayer from "./WebRTCPlayer";
 
 interface CameraFeedProps {
   camera: Camera;
@@ -123,15 +124,21 @@ export default function CameraFeed({ camera, onStudentClick, onUnknownClick, onA
       </div>
 
       {/* The "feed" area */}
-      <div className="cctv-scanline relative aspect-video bg-gradient-to-br from-gray-800 via-gray-900 to-gray-800">
-        <div className="cctv-noise" />
-
-        {/* Simulated scene */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="relative w-full h-full">
-            {/* Background elements for visual depth */}
+      <div className="cctv-scanline relative aspect-video bg-gradient-to-br from-gray-800 via-gray-900 to-gray-800 overflow-hidden">
+        
+        {camera.streamUrl ? (
+          <WebRTCPlayer url={camera.streamUrl} />
+        ) : (
+          <>
+            <div className="cctv-noise" />
             <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-gray-700/30 to-transparent" />
             <div className="absolute top-8 left-1/2 -translate-x-1/2 w-3/4 h-px bg-gray-600/30" />
+          </>
+        )}
+
+        {/* AI Overlay Container */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="relative w-full h-full pointer-events-auto">
             
             {/* Watermark in feed */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.03]">
