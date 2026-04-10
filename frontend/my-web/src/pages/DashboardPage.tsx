@@ -322,7 +322,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Register prompt for admin/staff */}
+      {/* Register prompt for admin */}
       {(permissions.canRegisterStudents && totalUnknown > 0) && (
         <div className="mt-6 p-4 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
           <div className="flex items-center gap-3">

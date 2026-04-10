@@ -150,7 +150,7 @@ export const ROLE_PERMISSIONS = {
     label: "Staff Member",
     canViewAllCameras: false, // only cameras with staff in allowedRoles
     canViewAllStudents: true,
-    canRegisterStudents: true,
+    canRegisterStudents: false,
     canViewUnknown: true,
     canAccessSettings: false,
     canExportData: false,

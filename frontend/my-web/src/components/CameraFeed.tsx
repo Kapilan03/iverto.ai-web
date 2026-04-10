@@ -1,6 +1,6 @@
 import { useStudents } from "../context/StudentContext";
 import { useAuth } from "../context/AuthContext";
-import type { Camera, Student } from "../data/mockData";
+import { ROLE_PERMISSIONS, type Camera, type Student } from "../data/mockData";
 import { Camera as CameraIcon, Circle, Users, AlertTriangle, Wrench } from "lucide-react";
 import { useState, useEffect } from "react";
 import IvertoLogo from "./IvertoLogo";
@@ -31,7 +31,8 @@ export default function CameraFeed({ camera, onStudentClick, onUnknownClick, onA
 
   const handleZoneClick = (zoneId: string) => {
     if (zoneId === "unknown") {
-      if (user?.role === "parent") {
+      const permissions = ROLE_PERMISSIONS[user?.role || "parent"];
+      if (!permissions.canRegisterStudents) {
         onAccessDenied();
       } else {
         onUnknownClick();
